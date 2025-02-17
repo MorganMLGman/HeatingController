@@ -50,10 +50,20 @@ ads1115:
     continuous_mode: true
 
 globals:
+  - id: lockout
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
   - id: global_gas_heater_turn_off_delay
     type: float
     restore_value: true
     initial_value: '1.5'
+  
+  - id: global_gas_heater_turn_off_delay_remaining
+    type: int
+    restore_value: false
+    initial_value: '0'
 
 sensor:
   - platform: dallas_temp
@@ -136,6 +146,34 @@ binary_sensor:
       } else {
         return false;
       }
+  
+  - platform: template
+    id: problem
+    name: "Problem"
+    icon: "mdi:alert"
+    lambda: |-
+      if (id(lockout)) {
+        return true;
+      } else {
+        return false;
+      }
+
+text_sensor:
+  - platform: template
+    id: error_text
+    name: Error
+    update_interval: never
+
+  - platform: template
+    id: remaining_time_text
+    name: Remaining Time
+    update_interval: 60s
+    lambda: |-
+      if (id(gas_heater_turn_off_delay_switch).state) {
+        return {"OFF in " + (id(global_gas_heater_turn_off_delay_remaining) / (1000 * 60)).c_str() + "min"};
+      } else {
+        return {"Delay OFF is not active"};
+      }
 
 output:
   - platform: gpio
@@ -150,16 +188,27 @@ output:
       number: GPIO2
 
 switch:
-  - platform: output
+  - platform: template
     id: gas_heater_switch
     name: "Gas Heater"
-    output: 'output_gas_heater'
+    optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - if:
+          condition:
+            lambda: return !id(lockout);
+          then:
+            - output.turn_on: output_gas_heater
+            - script.execute: gas_heater_turn_off_script
+    turn_off_action:
+      - output.turn_off: output_gas_heater
+    
 
   - platform: output
-    name: "Buzzer"
+    id: buzzer_switch
+    internal: true
     output: 'buzzer'
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: ALWAYS_OFF
 
   - platform: template
     name: "Gas Heater Turn Off Delay Activation"
@@ -183,7 +232,7 @@ number:
     id: gas_heater_turn_off_delay
     min_value: 0
     max_value: 24
-    step: 0.5
+    step: 0.25
     icon: "mdi:timer"
     entity_category: config
     optimistic: true
@@ -201,6 +250,56 @@ script:
     then: 
       - delay: 10s  
       - display_menu.hide:
+  
+  - id: gas_heater_turn_off_script
+    mode: restart
+    then:
+      - lambda: |-
+          if( 0 == id(gas_heater_turn_off_delay_switch).state && 0 == id(heat_pump_request_switch).state) {
+            // do nothing
+          } 
+          else if ( 1 == id(gas_heater_turn_off_delay_switch).state && 0 == id(heat_pump_request_switch).state) {
+            id(gas_heater_turn_off_script_delay).execute();
+          }
+          else if ( 0 == id(gas_heater_turn_off_delay_switch).state && 1 == id(heat_pump_request_switch).state) {
+            id(gas_heater_turn_off_script_heat_pump).execute();
+          }
+          else if ( 1 == id(gas_heater_turn_off_delay_switch).state && 1 == id(heat_pump_request_switch).state) {
+            id(gas_heater_turn_off_script_delay_heat_pump).execute();
+          }
+          else {
+            id(gas_heater_switch).turn_off();
+            id(lockout) = true;
+            id(error_text).publish_state("Error in gas_heater_turn_off_script");
+            id(buzzer_switch).turn_on();            
+          }
+
+  - id: gas_heater_turn_off_script_delay
+    mode: restart
+    then:
+      - lambda: |-
+          id(global_gas_heater_turn_off_delay_remaining) = id(global_gas_heater_turn_off_delay) * 60 * 60 * 1000;
+          while (id(global_gas_heater_turn_off_delay_remaining) > 0) {
+            id(global_gas_heater_turn_off_delay_remaining) -= 1000;
+            delay(1000);
+          }
+          id(global_gas_heater_turn_off_delay_remaining) = 0;
+          id(gas_heater_switch).turn_off();
+
+  - id: gas_heater_turn_off_script_heat_pump
+    mode: restart
+    then:
+      - lambda: |-
+          while(id(heat_pump_request))
+          { 
+            id(error_text).publish_state("Waiting for heat pump request to turn off");
+            delay(1000);
+          }
+          id(gas_heater_switch).turn_off();
+
+  - id: gas_heater_turn_off_script_delay_heat_pump
+    mode: restart
+    then:
 
 display:
   - platform: lcd_pcf8574
@@ -242,8 +341,8 @@ display:
     lambda: |-
       id(heating_controller_menu).draw();
       if (!id(heating_controller_menu).is_active()) {
-        it.printf(0, 0, "\x01: %2.1f", id(temp_water_exit).state);
-        it.printf(0, 8, "\x02: %2.1f", id(temp_water_return).state);
+        it.printf(0, 0, "\x01: %4.1f", id(temp_water_exit).state);
+        it.printf(0, 8, "\x02: %4.1f", id(temp_water_return).state);
       }
 
 lcd_menu:
@@ -281,7 +380,7 @@ lcd_menu:
       text: "OFF Delay"
       number: gas_heater_turn_off_delay
       immediate_edit: true
-      format: "%2.1f"
+      format: "%5.2f"
 
     - type: switch
       text: "Heat Pump"
@@ -289,4 +388,4 @@ lcd_menu:
       immediate_edit: false
       on_text: "ON"
       off_text: "OFF"
-    
+
