@@ -150,6 +150,11 @@ binary_sensor:
     icon: "mdi:flash"
     lambda: |-
       if (id(adc_voltage).state > 150.0) {
+        if(id(heat_pump_request_switch).state) {
+          return true;
+        } else {
+          return false;
+        }
         return true;
       } else {
         return false;
