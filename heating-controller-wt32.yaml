@@ -19,12 +19,6 @@ packages:
     ref: master
     refresh: 0s
 
-logger:
-  level: DEBUG
-
-api:
-  reboot_timeout: 10min
-
 http_request:
 
 ota:
