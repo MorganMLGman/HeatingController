@@ -183,13 +183,14 @@ text_sensor:
   - platform: template
     id: remaining_time_text
     name: Remaining Time
+    icon: "mdi:timer"
     update_interval: 60s
     lambda: |-
       float minutes = id(global_gas_heater_turn_off_delay_remaining) / (1000.0 * 60.0);
       if (id(gas_heater_turn_off_delay_switch).state) {
         return {"OFF in " + str_sprintf("%.0f", minutes) + "min"};
       } else {
-        return {"Delay OFF is not active"};
+        return {"Delayed OFF is not active"};
       }
 
 output:
@@ -217,7 +218,7 @@ switch:
             lambda: return !id(lockout);
           then:
             - output.turn_on: output_gas_heater
-            - script.execute: gas_heater_turn_off_script
+            # - script.execute: gas_heater_turn_off_script
     turn_off_action:
       - output.turn_off: output_gas_heater
     
