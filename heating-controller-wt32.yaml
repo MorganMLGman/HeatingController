@@ -7,6 +7,8 @@ esphome:
   name: heating-controller
   friendly_name: Heating Controller
   name_add_mac_suffix: true
+  platformio_options:
+    board_build.flash_mode: dio
   on_boot:
     - priority: 100
       then:
