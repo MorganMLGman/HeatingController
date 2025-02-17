@@ -7,6 +7,12 @@ esphome:
   name: heating-controller
   friendly_name: Heating Controller
   name_add_mac_suffix: true
+  on_boot:
+    - priority: 100
+      then:
+        - text_sensor.publish:
+            id: error_text
+            state: "No errors"
 
 esp32:
   board: esp32dev
@@ -52,7 +58,7 @@ ads1115:
 globals:
   - id: lockout
     type: bool
-    restore_value: true
+    restore_value: false
     initial_value: 'false'
 
   - id: global_gas_heater_turn_off_delay
@@ -146,6 +152,9 @@ binary_sensor:
       } else {
         return false;
       }
+    on_press:
+      then:
+        - switch.turn_on: gas_heater_switch    
   
   - platform: template
     id: problem
@@ -203,7 +212,6 @@ switch:
     turn_off_action:
       - output.turn_off: output_gas_heater
     
-
   - platform: output
     id: buzzer_switch
     internal: true
@@ -290,7 +298,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          while(id(heat_pump_request))
+          while(id(heat_pump_request).state)
           { 
             id(error_text).publish_state("Waiting for heat pump request to turn off");
             delay(1000);
@@ -300,6 +308,19 @@ script:
   - id: gas_heater_turn_off_script_delay_heat_pump
     mode: restart
     then:
+      - lambda: |-
+          id(global_gas_heater_turn_off_delay_remaining) = id(global_gas_heater_turn_off_delay) * 60 * 60 * 1000;
+          while (id(global_gas_heater_turn_off_delay_remaining) > 0) {
+            id(global_gas_heater_turn_off_delay_remaining) -= 1000;
+            delay(1000);
+          }
+          id(global_gas_heater_turn_off_delay_remaining) = 0;
+          while(id(heat_pump_request).state)
+          { 
+            id(error_text).publish_state("Waiting for heat pump request to turn off");
+            delay(1000);
+          }
+          id(gas_heater_switch).turn_off();
 
 display:
   - platform: lcd_pcf8574
@@ -388,4 +409,11 @@ lcd_menu:
       immediate_edit: false
       on_text: "ON"
       off_text: "OFF"
+
+    - type: command
+      immediate_edit: false
+      text: "Restart"
+      on_value:
+        then:
+          - button.press: restart_button_0
 
