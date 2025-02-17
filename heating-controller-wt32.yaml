@@ -150,18 +150,26 @@ binary_sensor:
     icon: "mdi:flash"
     lambda: |-
       if (id(adc_voltage).state > 150.0) {
-        if(id(heat_pump_request_switch).state) {
-          return true;
-        } else {
-          return false;
-        }
         return true;
       } else {
         return false;
       }
     on_press:
       then:
-        - switch.turn_on: gas_heater_switch    
+        - if:
+            condition:
+              switch.is_on: heat_pump_request_switch
+            then:
+              - switch.turn_on: gas_heater_switch
+    on_release:
+      then:
+        - if:
+            condition:
+              switch.is_on: heat_pump_request_switch
+            then:
+              - script.execute: gas_heater_turn_off_script
+
+
   
   - platform: template
     id: problem
