@@ -178,8 +178,9 @@ text_sensor:
     name: Remaining Time
     update_interval: 60s
     lambda: |-
+      float minutes = id(global_gas_heater_turn_off_delay_remaining) / (1000.0 * 60.0);
       if (id(gas_heater_turn_off_delay_switch).state) {
-        return {"OFF in " + (id(global_gas_heater_turn_off_delay_remaining) / (1000 * 60)).c_str() + "min"};
+        return {"OFF in " + str_sprintf("%.0f", minutes) + "min"};
       } else {
         return {"Delay OFF is not active"};
       }
@@ -195,6 +196,7 @@ output:
     id: 'buzzer'
     pin:
       number: GPIO2
+
 
 switch:
   - platform: template
@@ -411,7 +413,6 @@ lcd_menu:
       off_text: "OFF"
 
     - type: command
-      immediate_edit: false
       text: "Restart"
       on_value:
         then:
