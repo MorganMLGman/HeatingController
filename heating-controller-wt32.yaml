@@ -1,5 +1,7 @@
 substitutions:
   ota_password: "123456789"
+  dallas_address_1: "0x5a0922b10b105328"
+  dallas_address_2: "0xec0da4d44696c028"
 
 esphome:
   name: heating-controller
@@ -47,20 +49,26 @@ ads1115:
   - address: 0x48
     continuous_mode: true
 
+globals:
+  - id: global_gas_heater_turn_off_delay
+    type: float
+    restore_value: true
+    initial_value: '1.5'
+
 sensor:
   - platform: dallas_temp
-    address: 0x5a0922b10b105328
-    id: 'temp_woda_wyjscie'
-    name: "Woda wyjście"
+    address: ${dallas_address_1}
+    id: 'temp_water_exit'
+    name: "Water exit temperature"
     update_interval: 10s
     force_update: True
     filters:
       - throttle_average: 60s
 
   - platform: dallas_temp
-    address: 0xec0da4d44696c028
-    id: 'temp_woda_powrot'
-    name: "Woda powrót"
+    address: ${dallas_address_2}
+    id: 'temp_water_return'
+    name: "Water return temperature"
     update_interval: 10s
     force_update: True
     filters:
@@ -70,15 +78,17 @@ sensor:
     multiplexer: A0_GND
     gain: 6.144
     id: 'adc_voltage'
+    name: "ADC Voltage"
+    entity_category: diagnostic
     unit_of_measurement: "V"
     icon: "mdi:flash"
-    update_interval: 10ms
+    update_interval: 100ms
     filters:
       - offset: -2.5485                       # compensate the offset (calbration)
       - lambda: return x * x;
       - sliding_window_moving_average:
-          window_size: 5000                   # average over 30 seconds
-          send_every: 1000                    # report every 05 seconds
+          window_size: 300
+          send_every: 50
       - lambda: return sqrt(x);
       - multiply: 338
 
@@ -86,6 +96,14 @@ sensor:
     id: encoder1
     pin_a: GPIO39
     pin_b: GPIO36
+    filters:
+      debounce: 30ms
+    on_anticlockwise:
+      - display_menu.up:
+      - script.execute: return_to_homepage
+    on_clockwise:
+      - display_menu.down:
+      - script.execute: return_to_homepage
 
 binary_sensor:
   - platform: gpio
@@ -96,10 +114,32 @@ binary_sensor:
     filters:
       - delayed_on: 30ms
       - delayed_off: 30ms
+    on_press:
+      - if:
+          condition:  
+            display_menu.is_active:
+          then:
+            - display_menu.enter:
+          else:
+            - display_menu.show_main:
+            - display_menu.show:
+
+      - script.execute: return_to_homepage
+
+  - platform: template
+    id: heat_pump_request
+    name: "Heat Pump Request"
+    icon: "mdi:flash"
+    lambda: |-
+      if (id(adc_voltage).state > 150.0) {
+        return true;
+      } else {
+        return false;
+      }
 
 output:
   - platform: gpio
-    id: 'output_piec_gazowy'
+    id: 'output_gas_heater'
     pin:
       number: GPIO5
       inverted: true
@@ -111,14 +151,56 @@ output:
 
 switch:
   - platform: output
-    name: "Piec Gazowy"
-    output: 'output_piec_gazowy'
+    id: gas_heater_switch
+    name: "Gas Heater"
+    output: 'output_gas_heater'
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: output
     name: "Buzzer"
     output: 'buzzer'
     restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "Gas Heater Turn Off Delay Activation"
+    id: gas_heater_turn_off_delay_switch
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    icon: "mdi:timer"
+
+  - platform: template
+    name: "Heat Pump Request Activation"
+    id: heat_pump_request_switch
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    icon: "mdi:flash"
+
+number:
+  - platform: template
+    name: "Gas Heater Turn Off Delay"
+    id: gas_heater_turn_off_delay
+    min_value: 0
+    max_value: 24
+    step: 0.5
+    icon: "mdi:timer"
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 1.5
+    on_value:
+      then:
+        - globals.set:
+            id: global_gas_heater_turn_off_delay
+            value: !lambda 'return x;'
+
+script:
+  - id: return_to_homepage
+    mode: restart
+    then: 
+      - delay: 10s  
+      - display_menu.hide:
 
 display:
   - platform: lcd_pcf8574
@@ -136,5 +218,75 @@ display:
           - 0b00001
           - 0b11110
           - 0b00000
+      - position: 1
+        data: # arrow up symbol
+          - 0b00100
+          - 0b01110
+          - 0b10101
+          - 0b00100
+          - 0b00100
+          - 0b00100
+          - 0b00100
+          - 0b00100
+      - position: 2
+        data: # arrow down symbol
+          - 0b00100
+          - 0b00100
+          - 0b00100
+          - 0b00100
+          - 0b00100
+          - 0b10101
+          - 0b01110
+          - 0b00100
+
     lambda: |-
-      it.print("123456");
+      id(heating_controller_menu).draw();
+      if (!id(heating_controller_menu).is_active()) {
+        it.printf(0, 0, "\x01: %2.1f", id(temp_water_exit).state);
+        it.printf(0, 8, "\x02: %2.1f", id(temp_water_return).state);
+      }
+
+lcd_menu:
+  id: heating_controller_menu
+  display_id: 'lcd1602'
+  active: true
+  mode: rotary
+  mark_back: 0x08
+  mark_selected: 0x3e
+  mark_editing: 0x2a
+  mark_submenu: 0x7e
+
+  items:
+    - type: command
+      text: 0x08
+      on_value:
+        then:
+          - display_menu.hide:
+
+    - type: switch
+      text: "Gas Heater"
+      switch: gas_heater_switch
+      immediate_edit: false
+      on_text: "ON"
+      off_text: "OFF"
+
+    - type: switch
+      text: "Auto OFF"
+      switch: gas_heater_turn_off_delay_switch
+      immediate_edit: false
+      on_text: "ON"
+      off_text: "OFF"
+
+    - type: number
+      text: "OFF Delay"
+      number: gas_heater_turn_off_delay
+      immediate_edit: true
+      format: "%2.1f"
+
+    - type: switch
+      text: "Heat Pump"
+      switch: heat_pump_request_switch
+      immediate_edit: false
+      on_text: "ON"
+      off_text: "OFF"
+    
