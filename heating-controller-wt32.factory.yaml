@@ -1,0 +1,12 @@
+packages:
+  core: !include heating-controller-wt32.yaml
+
+esphome:
+  project:
+    name: MorganMLGman.HeatingController
+    version: dev
+
+dashboard_import:
+  package_import_url: github://MorganMLGman/HeatingController/heating-controller-wt32.yaml@main
+
+

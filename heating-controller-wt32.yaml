@@ -1,0 +1,146 @@
+substitutions:
+  ota_password: "123456789"
+
+esphome:
+  name: heating-controller
+  friendly_name: Heating Controller
+  name_add_mac_suffix: true
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+packages: 
+  wt32_package:
+    url: https://github.com/MorganMLGman/ESPHomeBaseFiles
+    files:
+      - ESP32/wt32_eth1.yaml
+    ref: master
+    refresh: 0s
+
+logger:
+  level: DEBUG
+
+api:
+  reboot_timeout: 10min
+
+http_request:
+
+ota:
+  - platform: esphome
+    id: ota_esphome
+    password: ${ota_password}
+  - platform: http_request
+    id: ota_http_request
+
+update:
+  - platform: http_request
+    name: Firmware Update
+    source: https://morganmlgman.github.io/HeatingController/firmware/HeatingController.manifest.json
+
+one_wire:
+  - platform: gpio
+    pin: GPIO15
+
+i2c:
+  sda: GPIO33
+  scl: GPIO32
+  scan: true
+  frequency: 400kHz
+
+ads1115:
+  - address: 0x48
+    continuous_mode: true
+
+sensor:
+  - platform: dallas_temp
+    address: 0x5a0922b10b105328
+    id: 'temp_woda_wyjscie'
+    name: "Woda wyjście"
+    update_interval: 10s
+    force_update: True
+    filters:
+      - throttle_average: 60s
+
+  - platform: dallas_temp
+    address: 0xec0da4d44696c028
+    id: 'temp_woda_powrot'
+    name: "Woda powrót"
+    update_interval: 10s
+    force_update: True
+    filters:
+      - throttle_average: 60s
+
+  - platform: ads1115
+    multiplexer: A0_GND
+    gain: 6.144
+    id: 'adc_voltage'
+    unit_of_measurement: "V"
+    icon: "mdi:flash"
+    update_interval: 10ms
+    filters:
+      - offset: -2.5485                       # compensate the offset (calbration)
+      - lambda: return x * x;
+      - sliding_window_moving_average:
+          window_size: 5000                   # average over 30 seconds
+          send_every: 1000                    # report every 05 seconds
+      - lambda: return sqrt(x);
+      - multiply: 338
+
+  - platform: rotary_encoder
+    id: encoder1
+    pin_a: GPIO39
+    pin_b: GPIO36
+
+binary_sensor:
+  - platform: gpio
+    id: encoder1_button
+    pin:
+      number: GPIO35
+      inverted: True
+    filters:
+      - delayed_on: 30ms
+      - delayed_off: 30ms
+
+output:
+  - platform: gpio
+    id: 'output_piec_gazowy'
+    pin:
+      number: GPIO5
+      inverted: true
+
+  - platform: gpio
+    id: 'buzzer'
+    pin:
+      number: GPIO2
+
+switch:
+  - platform: output
+    name: "Piec Gazowy"
+    output: 'output_piec_gazowy'
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: output
+    name: "Buzzer"
+    output: 'buzzer'
+    restore_mode: RESTORE_DEFAULT_OFF
+
+display:
+  - platform: lcd_pcf8574
+    id: 'lcd1602'
+    dimensions: 16x2
+    address: 0x27
+    user_characters:
+      - position: 0
+        data:  # mark_back symbol
+          - 0b00100
+          - 0b01000
+          - 0b11110
+          - 0b01001
+          - 0b00101
+          - 0b00001
+          - 0b11110
+          - 0b00000
+    lambda: |-
+      it.print("123456");
