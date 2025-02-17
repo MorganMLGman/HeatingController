@@ -226,7 +226,7 @@ switch:
     name: "Gas Heater Turn Off Delay Activation"
     id: gas_heater_turn_off_delay_switch
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: RESTORE_DEFAULT_OFF
     entity_category: config
     icon: "mdi:timer"
 
@@ -234,7 +234,7 @@ switch:
     name: "Heat Pump Request Activation"
     id: heat_pump_request_switch
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
+    restore_mode: RESTORE_DEFAULT_OFF
     entity_category: config
     icon: "mdi:flash"
 
@@ -367,13 +367,15 @@ display:
       id(heating_controller_menu).draw();
       if (!id(heating_controller_menu).is_active()) {
         it.printf(0, 0, "\x01: %4.1f", id(temp_water_exit).state);
-        it.printf(0, 8, "\x02: %4.1f", id(temp_water_return).state);
+        it.printf(0, 1, "\x02: %4.1f", id(temp_water_return).state);
+
+        it.printf(8, 0, "Gas: %s", id(gas_heater_switch).state ? "ON" : "OFF");
       }
 
 lcd_menu:
   id: heating_controller_menu
   display_id: 'lcd1602'
-  active: true
+  active: false
   mode: rotary
   mark_back: 0x08
   mark_selected: 0x3e
